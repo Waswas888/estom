@@ -7,12 +7,12 @@ from urllib.parse import urlparse, quote, unquote
 from fastapi import FastAPI, Response, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 import requests
-PORTAL_BASE = "http://tv.umcast.ru:88"
+PORTAL_BASE = "http://iptv.ria-link.tv"
 PORTAL_URL = f"{PORTAL_BASE}/stalker_portal/server/load.php"
-MAC_BASE = "00:1A:79:0A:2A:51"
+MAC_BASE = "4E209CBAB3315"
 SN_BASE = "AFC14B758BCA1"
-UID_BASE = "F680AADF6D02D8B121EF406E959F907E340B1408F5FD0050572B25AFF6279F68"
-DEVICE_ID = "BE41CCE3698F7A9C0641033B92DBB577565202145C38BEC1C1B372C2CFC8DBFF"
+UID_BASE = "E453EC4B736F708F85DC84C4DA4D8C0A4E67927B5D4A1956D64B527EE2328E48"
+DEVICE_ID = "0FD294AF8EEC9E9898E58358F853261E85D1A784011E4130E91745361032C925"
 SECRET_KEY = "000"
 TELEGRAM_GROUP_URL = "https://t.me/+2lWVU6CKQsVkMWRi"  
 STUB_VIDEO_URL = "https://raw.githubusercontent.com/Waswas777/video2/refs/heads/main/playlist.m3u8"
@@ -102,7 +102,7 @@ def get_session(force_new=False):
         pass
 
     token = ""
-    random_val = "9b6f316a86f56a367fc7994bd22cf0d6aab43de4"
+    random_val = "68e0a06b11b66055a414b6bb81fdd271c4f2561b"
     try:
         hs_url = f"{PORTAL_URL}?type=stb&action=handshake&token=&JsHttpRequest=1-xml"
         r = session.get(hs_url, timeout=10).json()
@@ -131,10 +131,10 @@ def get_session(force_new=False):
         f"&num_banks=2&sn={SN_BASE}&stb_type=MAG250&client_type=STB&image_version=218&video_out=hdmi"
         f"&device_id={DEVICE_ID}"
         f"&device_id2={DEVICE_ID}"
-        "&signature=9E6AA7B887A337E9267FB52F99171727740A2BFE568ADB6AE75334A6C0E9EE6F"
+        "&signature=810CC685EEDEE4902EF221637871AA1FC2484A95B3436B5B8F39ECC180B9E5C6"
         "&auth_second_step=1&hw_version=1.7-BD-00&not_valid_token=0"
         f"&metrics={metrics_data}"
-        f"&hw_version_2=f7d2287687f796878e1c6e02aa75b8183debd4ac&timestamp={int(time.time())}&api_signature=262&prehash=d969bb61899696b3aa5d1669af6d47f2790d5e74"
+        f"&hw_version_2=62f5b542b906bb906ac3b889fe6e1536283505b3&timestamp={int(time.time())}&api_signature=262&prehash=4bfdddb9e72dae362fcc4a88c85aeefd38b7c81f"
     )
     
     try:
