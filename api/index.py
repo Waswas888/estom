@@ -9,7 +9,7 @@ import requests
 PORTAL_URL = "http://tv.redmax.tv/stalker_portal/server/load.php"
 BASE_PORTAL_ROOT = "http://tv.redmax.tv/stalker_portal/c/"
 STREAM_BASE_HOST = "http://stream.redmax.tv/"
-MAC_BASE = "00:1A:79:00:02:FE"
+MAC_BASE = "00:1A:79:31:07:18"
 BASE_PROXY_URL = "https://estom-git-main-sens8.vercel.app"
 app = FastAPI()
 status_data = {
@@ -64,13 +64,14 @@ def get_session():
         f"{PORTAL_URL}?type=stb&action=get_profile&JsHttpRequest=1-xml&hd=1"
         f"{token_param}"
         "&ver=ImageDescription: 0.2.18-r23-250; ImageDate: Thu Sep 13 11:31:16 EEST 2018; PORTAL version: 5.3.0; API Version: JS API version: 343; STB API version: 146; Player Engine version: 0x58c"
-        "&num_banks=2&sn=AFDDBB900DAC7&stb_type=MAG250&client_type=STB&image_version=218&video_out=hdmi"
-        "&device_id=99C6BE2AE772CC6660BE59B7AA0CD132C1463315C7FB1611518D6C3CCD4F0CE2"
-        "&device_id2=99C6BE2AE772CC6660BE59B7AA0CD132C1463315C7FB1611518D6C3CCD4F0CE2"
-        "&signature=F815A102A114ACF1890EF21CAB0D11451C5732B6FE3A253AC4A26239C0CBD9AF"
+        "&num_banks=2&sn=AF0FE3ED37933&stb_type=MAG250&client_type=STB&image_version=218&video_out=hdmi"
+        "&device_id=6C6AEF484F52904118B8AEFA873B528D741CB55A0A9AD66E69DB7BE806529ACE"
+        "&device_id2=6C6AEF484F52904118B8AEFA873B528D741CB55A0A9AD66E69DB7BE806529ACE"
+        "&signature=076C0BE98244B862965A9B324C234E1BFCD959C06C704D68E7941E6796B49C19"
         "&auth_second_step=1&hw_version=1.7-BD-00&not_valid_token=0"
         f"&metrics={metrics_data}"
-        f"&hw_version_2=aa9eff686503b38e40ac84c5a469d92cf15adee3&timestamp={int(time.time())}&api_signature=262&prehash=d9b973e8083c84bd1a68a33147cdae39b605acc7"
+        f"&hw_version_2=706633d4775c8f8ddd3f3c26cfd678fe098b125e&timestamp={int(time.time())}&api_signature=262&prehash=961d4576d64b492171e40df402c3d6f6ee3b8054
+"
     )
     try:
         session.get(prof_url, timeout=10)
