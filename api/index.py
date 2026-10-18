@@ -10,7 +10,7 @@ PORTAL_URL = "http://tv.redmax.tv/stalker_portal/server/load.php"
 BASE_PORTAL_ROOT = "http://tv.redmax.tv/stalker_portal/c/"
 STREAM_BASE_HOST = "http://stream.redmax.tv/"
 MAC_BASE = "00:1A:79:31:07:18"
-BASE_PROXY_URL = "https://estom-git-main-sens8.vercel.app"
+BASE_PROXY_URL = "https://estom-git-main-sens8.vercel.app" # Замените на ваш домен Vercel при необходимости
 
 app = FastAPI()
 
@@ -38,6 +38,8 @@ def get_session():
     
     try:
         session.get("http://tv.redmax.tv/stalker_portal/c/", timeout=5)
+        session.get("http://tv.redmax.tv/stalker_portal/c/xpcom.common.js", timeout=5)
+        session.get("http://tv.redmax.tv/stalker_portal/c/version.js", timeout=5)
     except Exception as e:
         print(f"Portal root error: {e}")
         
@@ -53,6 +55,7 @@ def get_session():
     except Exception as e:
         print(f"Handshake error: {e}")
         
+    timestamp = int(time.time())
     metrics_data = json.dumps({
         "type": "stb",
         "model": "MAG254",
@@ -62,6 +65,7 @@ def get_session():
         "random": "",
     })
     token_param = f"&token={token}" if token else ""
+    
     prof_url = (
         f"{PORTAL_URL}?type=stb&action=get_profile&JsHttpRequest=1-xml&hd=1"
         f"{token_param}"
@@ -72,10 +76,14 @@ def get_session():
         "&signature=076C0BE98244B862965A9B324C234E1BFCD959C06C704D68E7941E6796B49C19"
         "&auth_second_step=1&hw_version=1.7-BD-00&not_valid_token=0"
         f"&metrics={metrics_data}"
-        f"&hw_version_2=706633d4775c8f8ddd3f3c26cfd678fe098b125e&timestamp={int(time.time())}&api_signature=262&prehash=961d4576d64b492171e40df402c3d6f6ee3b8054"
+        f"&hw_version_2=706633d4775c8f8ddd3f3c26cfd678fe098b125e&timestamp={timestamp}&api_signature=262&prehash=961d4576d64b492171e40df402c3d6f6ee3b8054"
     )
+    
+    prof_fallback_url = f"{PORTAL_URL}?type=stb&action=get_profile&JsHttpRequest=1-xml&sn=AF0FE3ED37933&device_id=&timestamp={timestamp}"
+
     try:
         session.get(prof_url, timeout=10)
+        session.get(prof_fallback_url, timeout=10)
         session.get(f"{PORTAL_URL}?type=account_info&action=get_main_info&JsHttpRequest=1-xml", timeout=10)
     except Exception as e:
         print(f"Profile/Account error: {e}")
