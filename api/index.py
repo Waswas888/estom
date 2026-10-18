@@ -1,29 +1,29 @@
 import hashlib
 import json
 import os
-import threading
 import time
 from fastapi import FastAPI, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 import requests
+
 PORTAL_URL = "http://tv.redmax.tv/stalker_portal/server/load.php"
 BASE_PORTAL_ROOT = "http://tv.redmax.tv/stalker_portal/c/"
 STREAM_BASE_HOST = "http://stream.redmax.tv/"
 MAC_BASE = "00:1A:79:31:07:18"
 BASE_PROXY_URL = "https://estom-git-main-sens8.vercel.app"
+
 app = FastAPI()
+
 status_data = {
     "last_update": "Hali yangilanmagan",
     "total_channels": 0,
-    "status": "Ishga tushmoqda...",
+    "status": "Kutilmoqda...",
 }
+
 def get_session():
     session = requests.Session()
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like"
-            " Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3"
-        ),
+        "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3",
         "X-User-Agent": "Model: MAG250; Link: WiFi",
         "Referer": "http://tv.redmax.tv/stalker_portal/c/index.html",
         "Accept": "*/*",
@@ -35,11 +35,12 @@ def get_session():
     session.cookies.set("mac", MAC_BASE, domain="tv.redmax.tv")
     session.cookies.set("stb_lang", "en", domain="tv.redmax.tv")
     session.cookies.set("timezone", "Europe/London", domain="tv.redmax.tv")    
+    
     try:
         session.get("http://tv.redmax.tv/stalker_portal/c/", timeout=5)
-        session.get("http://tv.redmax.tv/stalker_portal/c/version.js", timeout=5)
-    except Exception:
-        pass        
+    except Exception as e:
+        print(f"Portal root error: {e}")
+        
     token = ""
     try:
         hs_url = f"{PORTAL_URL}?type=stb&action=handshake&token=&JsHttpRequest=1-xml"
@@ -49,8 +50,9 @@ def get_session():
         if token:
             session.cookies.set("token", token, domain="tv.redmax.tv")
             session.headers.update({"Authorization": f"Bearer {token}"})
-    except Exception:
-        pass        
+    except Exception as e:
+        print(f"Handshake error: {e}")
+        
     metrics_data = json.dumps({
         "type": "stb",
         "model": "MAG254",
@@ -75,16 +77,19 @@ def get_session():
     try:
         session.get(prof_url, timeout=10)
         session.get(f"{PORTAL_URL}?type=account_info&action=get_main_info&JsHttpRequest=1-xml", timeout=10)
-    except Exception:
-        pass        
+    except Exception as e:
+        print(f"Profile/Account error: {e}")
+        
     return session
+
 def update_playlist():
     global status_data
     status_data["status"] = "Yangilanmoqda..."    
     session = get_session()
     channels = []
     seen_cmds = set()
-    genres = ["" , "*", "0"] 
+    genres = ["", "*", "0"] 
+    
     try:
         genres_url = f"{PORTAL_URL}?type=itv&action=get_genres&JsHttpRequest=1-xml"
         genres_resp = session.get(genres_url, timeout=10)
@@ -95,8 +100,9 @@ def update_playlist():
                 g_id = g.get("id")
                 if g_id is not None and str(g_id) not in [str(x) for x in genres]:
                     genres.append(str(g_id))
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Genres error: {e}")
+
     for genre in genres:
         channels_urls = [
             f"{PORTAL_URL}?type=itv&action=get_all_channels&genre={genre}&JsHttpRequest=1-xml",
@@ -124,8 +130,10 @@ def update_playlist():
                             added_count += 1
                     if added_count > 0:
                         break
-            except Exception:
+            except Exception as e:
+                print(f"Channels fetch error ({genre}): {e}")
                 continue
+
     channels_list = []
     for target_channel in channels:
         ch_name = target_channel.get("name", "Kanal")
@@ -137,30 +145,26 @@ def update_playlist():
                 "cmd": cmd,
                 "timeshift": timeshift
             })
-    temp_file = "playlist.tmp"
+            
     final_file = "playlist.json"    
-    with open(temp_file, "w", encoding="utf-8") as f:
-        json.dump(channels_list, f, ensure_ascii=False, indent=4)        
-    if os.path.exists(final_file):
-        os.remove(final_file)
-    os.rename(temp_file, final_file)    
+    with open(final_file, "w", encoding="utf-8") as f:
+        json.dump(channels_list, f, ensure_ascii=False, indent=4)    
+        
     status_data["last_update"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
     status_data["total_channels"] = len(channels_list)
     status_data["status"] = "Muvaffaqiyatli" if len(channels_list) > 0 else "Kopilmadi"
-    print(f"Pangilandi: {len(channels_list)} topildi.")    
-def background_worker():
-    while True:
+    print(f"Yangilandi: {len(channels_list)} ta kanal topildi.")
+
+def ensure_playlist():
+    if not os.path.exists("playlist.json"):
         try:
             update_playlist()
         except Exception as e:
-            print(f"Background worker xatoligi: {e}")
-        time.sleep(300)
-@app.on_event("startup")
-def startup_event():
-    t = threading.Thread(target=background_worker, daemon=True)
-    t.start()
+            print(f"Auto update error: {e}")
+
 @app.get("/", response_class=HTMLResponse)
 def admin_panel():
+    ensure_playlist()
     return f"""
     <!DOCTYPE html>
     <html lang="uz">
@@ -182,16 +186,20 @@ def admin_panel():
             <p><b>Kanallar soni:</b> {status_data["total_channels"]} ta</p>
             <p><b>Oxirgi yangilangan vaqt:</b> {status_data["last_update"]}</p>
             <hr style="border: 0.5px solid #334155; margin: 20px 0;">
-            <a href="https://stream-tv-new-kino.hf.space" target="_blank">ADMIN VXOD</a>
+            <a href="/playlist.json">JSON Playlist</a>
+            <a href="/pl.m3u8">M3U8 Playlist</a>
         </div>
     </body>
     </html>
     """
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
 @app.get("/playlist.json")
 def download_json():
+    ensure_playlist()
     if os.path.exists("playlist.json"):
         with open("playlist.json", "r", encoding="utf-8") as f:
             channels = json.load(f)
@@ -202,16 +210,19 @@ def download_json():
                 "url": f"{BASE_PROXY_URL}/stream/{index}"
             })
         return result
-    return {"error": "Hali playlist tayyor emas!"}, 404
+    return JSONResponse(status_code=404, content={"error": "Hali playlist tayyor emas!"})
+
 @app.get("/pl.m3u8", response_class=PlainTextResponse)
 def download_m3u8():
+    ensure_playlist()
     if not os.path.exists("playlist.json"):
         return "#EXTM3U\n# Xatolik: Playlist hali tayyorlanmadi"
     try:
         with open("playlist.json", "r", encoding="utf-8") as f:
             channels = json.load(f)
     except Exception:
-        return "#EXTM3U\n# Xatolik: Playlistni o'qib bo'lmadi"       
+        return "#EXTM3U\n# Xatolik: Playlistni o'qib bo'lmadi"        
+        
     m3u_lines = ["#EXTM3U"]
     for index, ch in enumerate(channels):
         name = ch.get("name", "Kanal")
@@ -222,6 +233,7 @@ def download_m3u8():
         m3u_lines.append(f"#EXTINF:-1{tvg_shift_attr}{catchup_attr},{name}")
         m3u_lines.append(stream_link)
     return "\n".join(m3u_lines)
+
 @app.get("/stream/{index}")
 def proxy_stream(index: int):
     if not os.path.exists("playlist.json"):
@@ -233,6 +245,7 @@ def proxy_stream(index: int):
         cmd = target["cmd"]
     except Exception as e:
         return Response(f"Kopilmadi: {e}", status_code=404)
+        
     session = get_session()
     stream_url = ""    
     try:
@@ -258,13 +271,16 @@ def proxy_stream(index: int):
             stream_url = STREAM_BASE_HOST + stream_cmd
         elif stream_cmd.startswith("http://") or stream_cmd.startswith("https://"):
             stream_url = stream_cmd
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Stream generation error: {e}")
+        
     if not stream_url and "http" in cmd:
         stream_url = cmd
         for prefix in ["ffmpeg ", "ch:ffrt ", "ffrt ", "ch:"]:
             if stream_url.startswith(prefix):
-                stream_url = stream_url[len(prefix):].strip()   
+                stream_url = stream_url[len(prefix):].strip()    
+                
     if not stream_url:
         return Response("яратиб бўлмади", status_code=500)        
+        
     return RedirectResponse(url=stream_url, status_code=302)
