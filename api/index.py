@@ -7,10 +7,10 @@ from fastapi import FastAPI, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 import requests
 
-PORTAL_URL = "http://tv.redmax.tv/stalker_portal/server/load.php"
-BASE_PORTAL_ROOT = "http://tv.redmax.tv/stalker_portal/c/"
-STREAM_BASE_HOST = "http://stream.redmax.tv/"
-MAC_BASE = "00:1A:79:00:02:FE"
+PORTAL_URL = "http://178.63.13.164:88/stalker_portal/server/load.php"
+BASE_PORTAL_ROOT = "http://178.63.13.164:88/stalker_portal/c/"
+STREAM_BASE_HOST = "http://178.63.13.164:88/"
+MAC_BASE = "00:1A:79:6D:71:F9"
 BASE_PROXY_URL = "https://estom-iqsnajru1-sens8.vercel.app"
 
 app = FastAPI()
@@ -29,20 +29,20 @@ def get_session():
             " Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3"
         ),
         "X-User-Agent": "Model: MAG250; Link: WiFi",
-        "Referer": "http://tv.redmax.tv/stalker_portal/c/index.html",
+        "Referer": "http://178.63.13.164:88/stalker_portal/c/index.html",
         "Accept": "*/*",
         "Accept-Encoding": "gzip, deflate",
         "Connection": "close",
         "Pragma": "no-cache",
     }
     session.headers.update(headers)
-    session.cookies.set("mac", MAC_BASE, domain="tv.redmax.tv")
-    session.cookies.set("stb_lang", "en", domain="tv.redmax.tv")
-    session.cookies.set("timezone", "Europe/London", domain="tv.redmax.tv")    
+    session.cookies.set("mac", MAC_BASE, domain="178.63.13.164:88")
+    session.cookies.set("stb_lang", "en", domain="178.63.13.164:88")
+    session.cookies.set("timezone", "Europe/London", domain="178.63.13.164:88")    
     
     try:
-        session.get("http://tv.redmax.tv/stalker_portal/c/", timeout=5)
-        session.get("http://tv.redmax.tv/stalker_portal/c/version.js", timeout=5)
+        session.get("http://178.63.13.164:88/stalker_portal/c/", timeout=5)
+        session.get("http://178.63.13.164:88/stalker_portal/c/version.js", timeout=5)
     except Exception as e:
         print(f"[SESSION WARNING] Base page load error: {e}")
         
@@ -53,7 +53,7 @@ def get_session():
         r = resp.json()
         token = r.get("js", {}).get("token", "")
         if token:
-            session.cookies.set("token", token, domain="tv.redmax.tv")
+            session.cookies.set("token", token, domain="178.63.13.164:88")
             session.headers.update({"Authorization": f"Bearer {token}"})
             print(f"[SESSION] Got token: {token}")
     except Exception as e:
@@ -63,8 +63,8 @@ def get_session():
         "type": "stb",
         "model": "MAG254",
         "mac": MAC_BASE,
-        "sn": "AFDDBB900DAC7",
-        "uid": "1790027FB626094E452F3A04C2527AC60571CEE93E1FD5DE5C4991BA634128C6",
+        "sn": "EC9C380992C54",
+        "uid": "C8CEF203DD02D3DDDB5BE9ED17E94EFE0771E4180F8BD336420FC60BF2E21F86",
         "random": "",
     })
     token_param = f"&token={token}" if token else ""
@@ -72,13 +72,13 @@ def get_session():
         f"{PORTAL_URL}?type=stb&action=get_profile&JsHttpRequest=1-xml&hd=1"
         f"{token_param}"
         "&ver=ImageDescription: 0.2.18-r23-250; ImageDate: Thu Sep 13 11:31:16 EEST 2018; PORTAL version: 5.3.0; API Version: JS API version: 343; STB API version: 146; Player Engine version: 0x58c"
-        "&num_banks=2&sn=AFDDBB900DAC7&stb_type=MAG250&client_type=STB&image_version=218&video_out=hdmi"
-        "&device_id=99C6BE2AE772CC6660BE59B7AA0CD132C1463315C7FB1611518D6C3CCD4F0CE2"
-        "&device_id2=99C6BE2AE772CC6660BE59B7AA0CD132C1463315C7FB1611518D6C3CCD4F0CE2"
-        "&signature=F815A102A114ACF1890EF21CAB0D11451C5732B6FE3A253AC4A26239C0CBD9AF"
+        "&num_banks=2&sn=EC9C380992C54&stb_type=MAG250&client_type=STB&image_version=218&video_out=hdmi"
+        "&device_id=A51DC74FDA73428833CE515F89FBDD4BF2A73F8D080A2239CC68464BACE7A07E"
+        "&device_id2=A51DC74FDA73428833CE515F89FBDD4BF2A73F8D080A2239CC68464BACE7A07E"
+        "&signature=FD4E6C846030A6E976613A7B0649BB7A9F5E9459D084C0A2FDB04418425044A3"
         "&auth_second_step=1&hw_version=1.7-BD-00&not_valid_token=0"
         f"&metrics={metrics_data}"
-        f"&hw_version_2=aa9eff686503b38e40ac84c5a469d92cf15adee3&timestamp={int(time.time())}&api_signature=262&prehash=d9b973e8083c84bd1a68a33147cdae39b605acc7"
+        f"&hw_version_2=e72d800958b565bfd95dca5450451b656e87d7cd&timestamp={int(time.time())}&api_signature=262&prehash=17f7c860ad6628472656ca70fdb75e52fc0d3d68"
     )
     try:
         session.get(prof_url, timeout=10)
