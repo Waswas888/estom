@@ -70,7 +70,7 @@ def get_session():
         "&signature=076C0BE98244B862965A9B324C234E1BFCD959C06C704D68E7941E6796B49C19"
         "&auth_second_step=1&hw_version=1.7-BD-00&not_valid_token=0"
         f"&metrics={metrics_data}"
-        f"&hw_version_2=706633d4775c8f8ddd3f3c26cfd678fe098b125e&timestamp={int(time.time())}&api_signature=262&prehash=961d4576d64b492171e40df402c3d6f6ee3b8054
+        f"&hw_version_2=706633d4775c8f8ddd3f3c26cfd678fe098b125e&timestamp={int(time.time())}&api_signature=262&prehash=961d4576d64b492171e40df402c3d6f6ee3b8054"
 "
     )
     try:
