@@ -55,8 +55,8 @@ def get_session():
         "type": "stb",
         "model": "MAG254",
         "mac": MAC_BASE,
-        "sn": "AFDDBB900DAC7",
-        "uid": "1790027FB626094E452F3A04C2527AC60571CEE93E1FD5DE5C4991BA634128C6",
+        "sn": "AF0FE3ED37933",
+        "uid": "0D460E12168F58600A90A7667502E8599323D6F4530CAE7488108D3650A220FF",
         "random": "",
     })
     token_param = f"&token={token}" if token else ""
