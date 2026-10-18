@@ -10,7 +10,7 @@ PORTAL_URL = "http://tv.redmax.tv/stalker_portal/server/load.php"
 BASE_PORTAL_ROOT = "http://tv.redmax.tv/stalker_portal/c/"
 STREAM_BASE_HOST = "http://stream.redmax.tv/"
 MAC_BASE = "00:1A:79:00:02:FE"
-BASE_PROXY_URL = "https://stream-tv-digital.hf.space"
+BASE_PROXY_URL = "https://estom-git-main-sens8.vercel.app"
 app = FastAPI()
 status_data = {
     "last_update": "Hali yangilanmagan",
