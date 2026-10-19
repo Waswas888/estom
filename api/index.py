@@ -4,17 +4,13 @@ import time
 import requests
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
-
 PORTAL_URL = "http://tv.redmax.tv/stalker_portal/server/load.php"
 STREAM_BASE_HOST = "http://stream.redmax.tv/"
 MAC_BASE = "00:1A:79:00:02:FE"
-BASE_PROXY_URL = "https://estom.vercel.app"  # Ваш домен на Vercel
-
-# --- НАСТРОЙКИ БЕЗОПАСНОСТИ И ФИЛЬТРАЦИИ ---
+BASE_PROXY_URL = "https://estom.vercel.app"  
 SECRET_KEY = "000"
 TELEGRAM_GROUP_URL = "https://t.me/+2lWVU6CKQsVkMWRi"
 STUB_VIDEO_URL = "https://raw.githubusercontent.com/Waswas777/video2/refs/heads/main/playlist.m3u8"
-
 BANNED_IPS = {
     "5.253.66.62", "23.106.253.18", "23.106.249.56", "31.3.156.64", 
     "38.180.180.126", "46.150.71.146", "91.214.82.125", "109.86.19.135", 
@@ -44,8 +40,11 @@ def is_request_blocked(request: Request) -> bool:
     # 3. Получаем User-Agent
     ua = request.headers.get("user-agent", "").lower()
     
-    # 4. Получаем страну (заголовок от Cloudflare/Vercel)
-    country = request.headers.get("cf-ipcountry", "").upper()
+    # 4. Получаем страну (с поддержкой Vercel заглавия)
+    country = (
+        request.headers.get("x-vercel-ip-country", "") or 
+        request.headers.get("cf-ipcountry", "")
+    ).upper()
 
     # Проверка на поисковых ботов и сканеры
     is_search_bot = any(bot in ua for bot in ["google", "bot", "crawler", "spider", "yandex"])
@@ -57,7 +56,7 @@ def is_request_blocked(request: Request) -> bool:
         client_ip.startswith("2a02:3032:")
     )
 
-    # Проверка по стране
+    # Проверка по стране: если страна определилась и её нет в белом списке — БЛОКИРУЕМ
     is_disallowed_country = bool(country and country not in ALLOWED_COUNTRIES)
 
     return is_search_bot or is_banned_ip or is_disallowed_country
@@ -220,7 +219,7 @@ def admin_panel(request: Request):
         </html>"""
         return HTMLResponse(content=preview_html)
 
-    # 2. Если открывают корень в браузере с верным ключом
+    # 2. Если открывают корень в браузере с неверным ключом
     user_key = request.query_params.get("key", "")
     if user_key != SECRET_KEY:
         return RedirectResponse(url=TELEGRAM_GROUP_URL, status_code=302)
@@ -256,7 +255,6 @@ def admin_panel(request: Request):
 
 @app.get("/pl.m3u8", response_class=PlainTextResponse)
 def download_m3u8(request: Request):
-    # ПРОВЕРКА КЛЮЧА И БЛОКИРОВКИ: Заблокированных кидает на видеозаглушку!
     if is_request_blocked(request):
         return RedirectResponse(url=STUB_VIDEO_URL, status_code=302)
 
@@ -271,7 +269,6 @@ def download_m3u8(request: Request):
     for idx, ch in enumerate(channels):
         name = ch.get("name", "Kanal")
         timeshift = ch.get("timeshift", 0)
-        # Каждая ссылка на поток содержит секретный ключ
         stream_link = f"{BASE_PROXY_URL}/stream/{idx}?key={SECRET_KEY}"
         
         tvg_shift_attr = f' tvg-shift="{timeshift}"' if timeshift else ''
@@ -285,18 +282,15 @@ def download_m3u8(request: Request):
 
 @app.get("/stream/{index}")
 def proxy_stream(index: int, request: Request):
-    # 1. ПРОВЕРКА КЛЮЧА (?key=000) И БЛОКИРОВКИ (IP / боты / страны)
     if is_request_blocked(request):
         return RedirectResponse(url=STUB_VIDEO_URL, status_code=302)
 
-    # 2. Восстанавливаем плейлист, если временный файл /tmp был удален Vercel
     if not os.path.exists("/tmp/playlist.json"):
         try:
             update_playlist()
         except Exception:
             pass
 
-    # 3. Читаем сохраненные каналы
     channels = []
     if os.path.exists("/tmp/playlist.json"):
         try:
@@ -305,7 +299,6 @@ def proxy_stream(index: int, request: Request):
         except Exception:
             pass
 
-    # Если индекс вне диапазона или файл пуст, пробуем принудительно обновить еще раз
     if not channels or index >= len(channels):
         try:
             update_playlist()
@@ -315,7 +308,6 @@ def proxy_stream(index: int, request: Request):
         except Exception:
             pass
 
-    # Если канал так и не найден в списке -> отдаем заглушку
     if not channels or index >= len(channels):
         return RedirectResponse(url=STUB_VIDEO_URL, status_code=302)
 
@@ -323,7 +315,6 @@ def proxy_stream(index: int, request: Request):
     session = get_session()
     stream_url = ""
 
-    # 4. Запрашиваем СВЕЖИЙ ТОКЕН у портала на лету
     try:
         clean_cmd = cmd
         for prefix in ["ffmpeg ", "ch:ffrt ", "ffrt ", "ch:"]:
@@ -347,14 +338,9 @@ def proxy_stream(index: int, request: Request):
         for prefix in ["ffmpeg ", "ch:ffrt ", "ffrt ", "ch:"]:
             if stream_url.startswith(prefix):
                 stream_url = stream_url[len(prefix):].strip()
-
-    # 5. Если ссылка получена — отдаем редирект на поток со свежим токеном
     if stream_url:
         return RedirectResponse(url=stream_url, status_code=302)
-
-    # Редирект на заглушку происходит только если портал не выдал токен
     return RedirectResponse(url=STUB_VIDEO_URL, status_code=302)
-
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     return Response(content=b"", media_type="image/vnd.microsoft.icon")
