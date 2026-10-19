@@ -1,268 +1,246 @@
-from fastapi import FastAPI, Response, Request
-from fastapi.responses import RedirectResponse, PlainTextResponse, JSONResponse
-import httpx
-import time
+import hashlib
 import json
-import urllib.parse
 import os
-
+import time
+from fastapi import FastAPI, Response
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+import requests
+PORTAL_URL = "http://portal.wisp.cat/stalker_portal/server/load.php"
+MAC_BASE = "00:1A:79:65:7B:01"
+BASE_PROXY_URL = "https://stream-tv-digital.hf.space"
 app = FastAPI()
-
-PORTAL_URL = "http://portal.sky2000.ru/stalker_portal/server/load.php"
-BASE_PORTAL_ROOT = "http://portal.sky2000.ru/stalker_portal/"
-
-MAC = "00:1A:79:4D:A5:73"
-SN = "B4B46F9171F91"
-UID = "E083654D924637D114AD665CAB20140D47EF4B848AC71AF7CD82BC05E65E3396"
-RANDOM = "51ccb0ddb009dbd4f474ceb8b88744314cbfa12f"
-DEVICE_ID = "A8E9507D432CA3C03C6FC10410D492B5D4C2C924BA71B8786264603020B2C402"
-SIGNATURE = "74032610A2B99519B2694D22397AE085A99412E8784545E4EDE7613A0C7136D"
-HW_VERSION_2 = "474e96e1873920cd1e6066ba5c6725fbe0f0f0a8"
-PREHASH = "10980435162b4213af497d4568c37959deb340f5"
-
-TELEGRAM_GROUP = "https://t.me/+2lWVU6CKQsVkMWRi"
-STREAM_KEY = "TvZaTak"
-STUB_VIDEO_URL = "https://github.com/brawltop8599-boop/ads-stub/raw/refs/heads/main/v.mp4?password=TvZaTak"
-
-cached_channels = []
-cached_token = ""
-session_time = 0
-
-async def get_valid_session_and_channels():
-    global cached_channels, cached_token, session_time
-    now = time.time()
-    
-    if cached_channels and cached_token and (now - session_time < 300):
-        return cached_token, cached_channels
-
-    initial_cookies = {
-        "mac": MAC,
-        "stb_lang": "en",
-        "timezone": "Europe/London"
-    }
-    
+status_data = {
+    "last_update": "Hali yangilanmagan",
+    "total_channels": 1,
+    "status": "Kuting...",
+}
+def get_session():
+    session = requests.Session()
     headers = {
-        "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3",
+        "User-Agent": (
+            "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like"
+            " Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3"
+        ),
         "X-User-Agent": "Model: MAG250; Link: WiFi",
-        "Referer": "http://portal.sky2000.ru/stalker_portal/c/index.html",
+        "Referer": "http://portal.wisp.cat/stalker_portal/c/index.html",
         "Accept": "*/*",
         "Accept-Encoding": "gzip, deflate",
         "Connection": "close",
         "Pragma": "no-cache",
     }
+    session.headers.update(headers)
+    session.cookies.set("mac", MAC_BASE, domain="portal.wisp.cat")
+    session.cookies.set("stb_lang", "en", domain="portal.wisp.cat")
+    session.cookies.set("timezone", "Europe/London", domain="portal.wisp.cat")
 
-    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True, cookies=initial_cookies, headers=headers) as client:
+    try:
+        session.get("http://portal.wisp.cat/stalker_portal/c/", timeout=5)
+    except Exception:
+        pass
+
+    try:
+        session.get("http://portal.wisp.cat/stalker_portal/c/xpcom.common.js", timeout=5)
+    except Exception:
+        pass
+
+    try:
+        session.get("http://portal.wisp.cat/stalker_portal/c/version.js", timeout=5)
+    except Exception:
+        pass
+
+    token = ""
+    try:
+        hs_url = "http://portal.wisp.cat/stalker_portal/server/load.php?type=stb&action=handshake&token=&JsHttpRequest=1-xml"
+        r = session.get(hs_url, timeout=10).json()
+        token = r.get("js", {}).get("token", "")
+        if token:
+            session.cookies.set("token", token, domain="portal.wisp.cat")
+            session.headers.update({"Authorization": f"Bearer {token}"})
+    except Exception:
+        pass
+    metrics_data = json.dumps({
+        "type": "stb",
+        "model": "MAG254",
+        "mac": MAC_BASE,
+        "sn": "C29FF3A4A8F7B",
+        "uid": "662591BD155567306F4C764C06503277A88F46A33171F128147ABFD5BDEF3EF3",
+        "random": "b9a90b92ac722147751dbbf9a06fd3a6dec9c08f"
+    })
+    token_param = f"&token={token}" if token else ""
+    prof_url = (
+        f"{PORTAL_URL}?type=stb&action=get_profile&JsHttpRequest=1-xml&hd=1"
+        f"{token_param}"
+        "&ver=ImageDescription: 0.2.18-r23-250; ImageDate: Thu Sep 13 11:31:16 EEST 2018; PORTAL version: 5.3.0; API Version: JS API version: 343; STB API version: 146; Player Engine version: 0x58c"
+        "&num_banks=2&sn=C29FF3A4A8F7B&stb_type=MAG250&client_type=STB&image_version=218&video_out=hdmi"
+        "&device_id=ED8631D5017C0DC1C1F6EF359AED6D2A894486F6D12876E3BE38B9A377953846"
+        "&device_id2=ED8631D5017C0DC1C1F6EF359AED6D2A894486F6D12876E3BE38B9A377953846"
+        "&signature=02D90DC0532B449B16E8DC52B55521F8823B0FDD8B7C09D80930627FBF4EC212"
+        "&auth_second_step=1&hw_version=1.7-BD-00&not_valid_token=0"
+        f"&metrics={metrics_data}"
+        f"&hw_version_2=df793726342adb400f308f1c587784ae29c4f28a&timestamp={int(time.time())}&api_signature=262&prehash=1bef54600c63cfdc086dad053d447f3ade6e628f"
+    )
+    
+    try:
+        session.get(prof_url, timeout=10)
+    except Exception:
+        pass
+
+    try:
+        acc_url = f"{PORTAL_URL}?type=account_info&action=get_main_info&JsHttpRequest=1-xml"
+        session.get(acc_url, timeout=10)
+    except Exception:
+        pass
+
+    return session
+
+def update_playlist():
+    global status_data
+    status_data["status"] = "Yangilanmoqda..."
+
+    session = get_session()
+    channels_url = f"{PORTAL_URL}?type=itv&action=get_all_channels&JsHttpRequest=1-xml"
+
+    channels = []
+    for _ in range(2):
         try:
-            await client.get(BASE_PORTAL_ROOT)
+            channels_res = session.get(channels_url, timeout=10).json()
+            channels = channels_res.get("js", {}).get("data", [])
+            if channels:
+                break
+        except Exception:
+            time.sleep(1)
 
-            hs_url = f"{PORTAL_URL}?type=stb&action=handshake&token=&JsHttpRequest=1-xml"
-            hs_res = await client.get(hs_url)
-            hs_text = hs_res.text.strip()
-            
-            try:
-                hs_data = hs_res.json()
-            except Exception:
-                print(f"Handshake non-JSON: {hs_text[:150]}")
-                return cached_token, cached_channels
+    if not channels:
+        cmd = "ffmpeg http://lb.wisp.cat/lb0/5kanalHDUA/video.m3u8"
+        ch_name = "5 Kanal HD"
+    else:
+        target_channel = channels[0]
+        ch_name = target_channel.get("name", "Kanal")
+        cmd = target_channel.get("cmd", "ffmpeg http://lb.wisp.cat/lb0/5kanalHDUA/video.m3u8")
 
-            js_resp = hs_data.get("js", {})
-            token = js_resp.get("token", "")
-            rand_val = js_resp.get("random", RANDOM)
+    temp_file = "/tmp/playlist.tmp"
+    final_file = "/tmp/playlist.json"
 
-            if token:
-                client.cookies.set("token", token)
-                client.headers["Authorization"] = f"Bearer {token}"
-                client.headers["X-Authorization"] = f"Bearer {token}"
+    success = False
+    stream_url = None
 
-            metrics_data = json.dumps({
-                "type": "stb", "model": "MAG254", "mac": MAC, "sn": SN, "uid": UID, "random": rand_val
-            })
-            token_param = f"&token={token}" if token else ""
-            
-            prof_url = (
-                f"{PORTAL_URL}?type=stb&action=get_profile&JsHttpRequest=1-xml&hd=1"
-                f"{token_param}"
-                "&ver=ImageDescription: 0.2.18-r23-250; ImageDate: Thu Sep 13 11:31:16 EEST 2018; PORTAL version: 5.3.0; API Version: JS API version: 343; STB API version: 146; Player Engine version: 0x58c"
-                f"&num_banks=2&sn={SN}&stb_type=MAG250&client_type=STB&image_version=218&video_out=hdmi"
-                f"&device_id={DEVICE_ID}&device_id2={DEVICE_ID}&signature={SIGNATURE}"
-                f"&auth_second_step=1&hw_version=1.7-BD-00&not_valid_token=0"
-                f"&metrics={urllib.parse.quote(metrics_data)}"
-                f"&hw_version_2={HW_VERSION_2}&timestamp={int(now)}&api_signature=262&prehash={PREHASH}"
-            )
-            
-            await client.get(prof_url)
-            await client.get(f"{PORTAL_URL}?type=account_info&action=get_main_info&JsHttpRequest=1-xml{token_param}")
-
-            genres_map = {}
-            try:
-                genres_url = f"{PORTAL_URL}?type=itv&action=get_genres&JsHttpRequest=1-xml{token_param}"
-                genres_res = await client.get(genres_url)
-                g_text = genres_res.text.strip()
-                if g_text.startswith("{") or g_text.startswith("["):
-                    g_data = genres_res.json().get("js", [])
-                    if isinstance(g_data, dict):
-                        g_data = g_data.get("data", [])
-                    for g in g_data:
-                        gid = g.get("id")
-                        gtitle = g.get("title", "Umumiy")
-                        if gid is not None:
-                            genres_map[str(gid)] = gtitle
-                else:
-                    print(f"Genres non-JSON: {g_text[:150]}")
-            except Exception as e:
-                print(f"Genres error: {e}")
-
-            channels = []
-            seen_cmds = set()
-
-            try:
-                ch_url = f"{PORTAL_URL}?type=itv&action=get_all_channels&JsHttpRequest=1-xml{token_param}"
-                ch_res = await client.get(ch_url)
-                ch_text = ch_res.text.strip()
-                if ch_text.startswith("{") or ch_text.startswith("["):
-                    ch_json = ch_res.json()
-                    js_data = ch_json.get("js", [])
-                    data = js_data if isinstance(js_data, list) else (js_data.get("data") or js_data.get("channels") or [])
-                    if isinstance(data, list):
-                        channels = data
-                else:
-                    print(f"Channels non-JSON: {ch_text[:150]}")
-            except Exception as e:
-                print(f"Channels error: {e}")
-
-            if not channels:
-                try:
-                    list_url = f"{PORTAL_URL}?type=itv&action=get_ordered_list&genre=*&sortby=number&order=asc&hd=0&fav=0&not_my_genres=0&JsHttpRequest=1-xml{token_param}"
-                    res = await client.get(list_url)
-                    res_text = res.text.strip()
-                    if res_text.startswith("{") or res_text.startswith("["):
-                        res_json = res.json()
-                        data = res_json.get("js", {}).get("data", [])
-                        if not data and isinstance(res_json.get("js"), list):
-                            data = res_json.get("js", [])
-                        if isinstance(data, list):
-                            channels = data
-                    else:
-                        print(f"Ordered list non-JSON: {res_text[:150]}")
-                except Exception as e:
-                    print(f"Ordered list error: {e}")
-
-            formatted_channels = []
-            for ch in channels:
-                cmd = ch.get("cmd", "")
-                if cmd:
-                    if cmd in seen_cmds:
-                        continue
-                    seen_cmds.add(cmd)
-                    
-                    genre_id = str(ch.get("tv_genre_id", ch.get("genre_id", "")))
-                    logo = ch.get("logo", "")
-                    if logo and not logo.startswith("http"):
-                        logo = f"http://portal.sky2000.ru/stalker_portal/misc/logos/{logo}"
-                    
-                    formatted_channels.append({
-                        "name": ch.get("name", "Kanal"),
-                        "cmd": cmd,
-                        "timeshift": ch.get("timeshift", 0),
-                        "group_title": genres_map.get(genre_id, "Umumiy"),
-                        "logo": logo
-                    })
-
-            if formatted_channels:
-                cached_channels = formatted_channels
-                cached_token = token
-                session_time = now
-                print(f"Успешно загружено каналов: {len(cached_channels)}")
-
-        except Exception as e:
-            print(f"Session error: {e}")
-
-    return cached_token, cached_channels
-
-@app.get("/")
-async def root():
-    return RedirectResponse(url=TELEGRAM_GROUP, status_code=302)
-
-@app.get("/pl.m3u8")
-async def get_m3u8(request: Request):
-    _, channels = await get_valid_session_and_channels()
-    
-    base_url = str(request.base_url).rstrip("/")
-    
-    m3u = ["#EXTM3U"]
-    for idx, ch in enumerate(channels):
-        shift = f' tvg-shift="{ch["timeshift"]}" catchup="default" catchup-days="3"' if ch["timeshift"] else ""
-        group = f' group-title="{ch["group_title"]}"' if ch["group_title"] else ""
-        logo = f' tvg-logo="{ch["logo"]}"' if ch["logo"] else ""
-        m3u.append(f'#EXTINF:-1{group}{shift}{logo},{ch["name"]}')
-        m3u.append(f"{base_url}/stream/{idx}?key={STREAM_KEY}")
-        
-    return Response(content="\n".join(m3u), media_type="audio/x-mpegurl; charset=utf-8")
-
-@app.get("/stream/{idx}")
-async def get_stream(idx: int, key: str):
-    if key != STREAM_KEY:
-        return RedirectResponse(url=STUB_VIDEO_URL, status_code=302)
-        
-    token, channels = await get_valid_session_and_channels()
-    
-    if idx < 0 or idx >= len(channels):
-        return RedirectResponse(url=STUB_VIDEO_URL, status_code=302)
-        
-    target = channels[idx]
-    stream_url = ""
-    
-    cookies = {"mac": MAC, "stb_lang": "en", "timezone": "Europe/London"}
-    if token:
-        cookies["token"] = token
-        
-    headers = {
-        "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3",
-        "X-User-Agent": "Model: MAG250; Link: WiFi",
-        "Referer": "http://portal.sky2000.ru/stalker_portal/c/index.html",
-    }
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-        headers["X-Authorization"] = f"Bearer {token}"
-
-    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True, cookies=cookies, headers=headers) as client:
+    for attempt in range(2):
         try:
-            token_param = f"&token={token}" if token else ""
-            link_url = f"{PORTAL_URL}?type=itv&action=create_link&cmd={urllib.parse.quote(target['cmd'])}&JsHttpRequest=1-xml{token_param}"
-            link_res = await client.get(link_url)
-            link_text = link_res.text.strip()
-            
-            if link_text.startswith("{") or link_text.startswith("["):
-                link_data = link_res.json()
-                stream_cmd = link_data.get("js", {}).get("cmd") or link_data.get("js", {}).get("url") or link_data.get("cmd", "")
-            else:
-                stream_cmd = ""
-            
-            for prefix in ["ffmpeg ", "ch:ffrt ", "ffrt ", "ch:"]:
-                if stream_cmd.startswith(prefix):
-                    stream_cmd = stream_cmd[len(prefix):].strip()
-                    
-            if stream_cmd.startswith("http://") or stream_cmd.startswith("https://"):
-                stream_url = stream_cmd
-            elif stream_cmd.startswith("/"):
-                portal_parsed = urllib.parse.urlparse(PORTAL_URL)
-                stream_url = f"{portal_parsed.scheme}://{portal_parsed.netloc}{stream_cmd}"
-                
-            if stream_url and "token=" not in stream_url and token:
-                sep = "&" if "?" in stream_url else "?"
-                stream_url = f"{stream_url}{sep}token={token}"
-        except Exception as e:
-            print(f"Create link error: {e}")
-            
-        if not stream_url and target["cmd"]:
-            fallback = target["cmd"]
-            for prefix in ["ffmpeg ", "ch:ffrt ", "ffrt ", "ch:"]:
-                if fallback.startswith(prefix):
-                    fallback = fallback[len(prefix):].strip()
-            if fallback.startswith("http://") or fallback.startswith("https://"):
-                stream_url = fallback
-                
-    if not stream_url:
-        return RedirectResponse(url=STUB_VIDEO_URL, status_code=302)
-        
-    return RedirectResponse(url=stream_url, status_code=302)
+            time.sleep(0.2)
+            link_url = f"{PORTAL_URL}?type=itv&action=create_link&cmd={requests.utils.quote(cmd)}&JsHttpRequest=1-xml"
+            link_res = session.get(link_url, timeout=10).json()
+            stream_cmd = link_res.get("js", {}).get("cmd")
+
+            if stream_cmd:
+                if stream_cmd.startswith("ffmpeg "):
+                    stream_url = stream_cmd.replace("ffmpeg ", "").strip()
+                else:
+                    stream_url = stream_cmd
+                success = True
+                break
+        except Exception:
+            session = get_session()
+
+    if not success or not stream_url:
+        stream_url = (
+            cmd.replace("ffmpeg ", "").replace("ch:ffrt ", "").strip()
+            if "http" in cmd
+            else "http://lb.wisp.cat/lb0/5kanalHDUA/video.m3u8"
+        )
+
+    channels_list = [{"name": ch_name, "url": stream_url}]
+
+    with open(temp_file, "w", encoding="utf-8") as f:
+        json.dump(channels_list, f, ensure_ascii=False, indent=4)
+
+    if os.path.exists(final_file):
+        os.remove(final_file)
+    os.rename(temp_file, final_file)
+
+    status_data["last_update"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    status_data["status"] = "Muvaffaqiyatli"
+
+@app.get("/", response_class=HTMLResponse)
+def admin_panel():
+    # Автообновление плейлиста на лету, если его нет или прошло больше 60 секунд
+    if not os.path.exists("/tmp/playlist.json") or (time.time() - os.path.getmtime("/tmp/playlist.json") > 60):
+        try:
+            update_playlist()
+        except Exception:
+            pass
+
+    return f"""
+    <!DOCTYPE html>
+    <html lang="uz">
+    <head>
+        <meta charset="UTF-8">
+        <title>Admin Panel</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; text-align: center; padding: 50px; }}
+            .card {{ background: #1e293b; padding: 30px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }}
+            .badge {{ background: #22c55e; color: white; padding: 5px 12px; border-radius: 20px; font-weight: bold; }}
+            a {{ color: #38bdf8; text-decoration: none; display: block; margin-top: 15px; font-size: 18px; }}
+            a:hover {{ text-decoration: underline; }}
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <h2>Admin Panel</h2>
+            <p>Holati: <span class="badge">{status_data["status"]}</span></p>
+            <p><b>Kanal:</b> {status_data["total_channels"]} ta</p>
+            <p><b>Oxirgi yangilangan vaqt:</b> {status_data["last_update"]}</p>
+            <hr style="border: 0.5px solid #334155; margin: 20px 0;">
+            <a href="http://rebrand.ly/TvZaTak" target="_blank">TEST ADMIN</a>
+        </div>
+    </body>
+    </html>
+    """
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+@app.get("/playlist.json")
+def download_json():
+    if not os.path.exists("/tmp/playlist.json") or (time.time() - os.path.getmtime("/tmp/playlist.json") > 60):
+        try:
+            update_playlist()
+        except Exception:
+            pass
+
+    if os.path.exists("/tmp/playlist.json"):
+        with open("/tmp/playlist.json", "r", encoding="utf-8") as f:
+            content = json.load(f)
+        return content
+    return {"error": "Hali playlist tayyor emas!"}, 404
+
+@app.get("/pl.m3u8", response_class=PlainTextResponse)
+def download_m3u8():
+    if not os.path.exists("/tmp/playlist.json") or (time.time() - os.path.getmtime("/tmp/playlist.json") > 60):
+        try:
+            update_playlist()
+        except Exception:
+            pass
+
+    if not os.path.exists("/tmp/playlist.json"):
+        return "#EXTM3U\n# Xatolik: Playlist hali tayyorlanmadi"
+
+    try:
+        with open("/tmp/playlist.json", "r", encoding="utf-8") as f:
+            channels = json.load(f)
+    except Exception:
+        return "#EXTM3U\n# Xatolik: Playlistni o'qib bo'lmadi"
+
+    m3u_lines = ["#EXTM3U"]
+    for ch in channels:
+        name = ch.get("name", "Kanal")
+        url = ch.get("url", "")
+        m3u_lines.append(f"#EXTINF:-1,{name}")
+        m3u_lines.append(url)
+
+    return "\n".join(m3u_lines)
+from fastapi.responses import Response
+
+@app.get('/favicon.ico', include_in_schema=False)
+async def favicon():
+    return Response(content=b'', media_type='image/vnd.microsoft.icon')
