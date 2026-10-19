@@ -12,7 +12,7 @@ SECRET_KEY = "000"
 TELEGRAM_GROUP_URL = "https://t.me/+2lWVU6CKQsVkMWRi"
 STUB_VIDEO_URL = "https://raw.githubusercontent.com/Waswas777/video2/refs/heads/main/playlist.m3u8"
 BANNED_IPS = {
-        "5.253.66.62", "23.106.253.18", "23.106.249.56", "31.3.156.64", "38.180.180.126", "91.214.82.125", "109.86.19.135", "217.12.223.190", "188.233.60.20",
+        "5.253.66.62", "23.106.253.18", "23.106.249.56", "31.3.156.64", "38.180.180.126", "91.214.82.125", "109.86.19.135", "217.12.223.190", "188.233.60.20", "46.150.81.11",
         "91.195.172.249", "149.102.240.138", "91.194.168.20", "91.195.172.241", "91.195.172.240", "88.218.92.126", "194.44.26.199", "130.0.235.254", "176.120.111.12",
         "46.96.27.147", "194.44.46.82", "213.109.230.149", "77.239.161.129", "192.162.33.80", "192.162.33.73", "46.150.74.185", "195.64.183.231", "62.233.43.122", "37.214.62.53",
         "176.108.27.175", "91.123.158.251", "46.172.86.196", "213.5.196.234", "217.196.164.251", "195.64.183.237", "37.214.2.184", "176.105.208.67", "91.214.137.213", "92.115.52.202",    
@@ -39,22 +39,17 @@ def is_request_blocked(request: Request) -> bool:
     user_key = request.query_params.get("key", "")
     if user_key != SECRET_KEY:
         return True
-
     # 2. Получаем IP клиента
-    client_ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "").split(",")[0].strip()
-    
+    client_ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "").split(",")[0].strip()    
     # 3. Получаем User-Agent
-    ua = request.headers.get("user-agent", "").lower()
-    
+    ua = request.headers.get("user-agent", "").lower()   
     # 4. Получаем страну (с поддержкой Vercel заголовков)
     country = (
         request.headers.get("x-vercel-ip-country", "") or 
         request.headers.get("cf-ipcountry", "")
     ).upper()
-
     # Проверка на поисковых ботов и сканеры
     is_search_bot = any(bot in ua for bot in ["google", "bot", "crawler", "spider", "yandex"])
-
     # Черный список IP и подсетей (ваш большой список переписанный под Python)
     is_banned_ip_or_subnet = (
         client_ip in BANNED_IPS or
@@ -317,26 +312,20 @@ def admin_panel(request: Request):
 def download_m3u8(request: Request):
     if is_request_blocked(request):
         return RedirectResponse(url=STUB_VIDEO_URL, status_code=302)
-
     ensure_playlist()
     if not os.path.exists("/tmp/playlist.json"):
         return "#EXTM3U\n# Xatolik: Playlist hali tayyorlanmadi"
-
     with open("/tmp/playlist.json", "r", encoding="utf-8") as f:
         channels = json.load(f)
-
     m3u_lines = ["#EXTM3U"]
     for idx, ch in enumerate(channels):
         name = ch.get("name", "Kanal")
         timeshift = ch.get("timeshift", 0)
-        stream_link = f"{BASE_PROXY_URL}/stream/{idx}?key={SECRET_KEY}"
-        
+        stream_link = f"{BASE_PROXY_URL}/stream/{idx}?key={SECRET_KEY}"        
         tvg_shift_attr = f' tvg-shift="{timeshift}"' if timeshift else ''
-        catchup_attr = ' catchup="default" catchup-days="3"' if timeshift else ''
-        
+        catchup_attr = ' catchup="default" catchup-days="3"' if timeshift else ''        
         m3u_lines.append(f"#EXTINF:-1{tvg_shift_attr}{catchup_attr},{name}")
         m3u_lines.append(stream_link)
-
     return "\n".join(m3u_lines)
 @app.get("/stream/{index}")
 def proxy_stream(index: int, request: Request):
