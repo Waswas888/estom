@@ -2,18 +2,23 @@ import hashlib
 import json
 import os
 import time
-from fastapi import FastAPI, Response
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 import requests
+from fastapi import FastAPI, Response
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+
 PORTAL_URL = "http://tv.redmax.tv/stalker_portal/server/load.php"
+STREAM_BASE_HOST = "http://stream.redmax.tv/"
 MAC_BASE = "00:1A:79:00:02:FE"
 BASE_PROXY_URL = "https://stream-tv-digital.hf.space"
+
 app = FastAPI()
+
 status_data = {
     "last_update": "Hali yangilanmagan",
-    "total_channels": 1,
+    "total_channels": 0,
     "status": "Kuting...",
 }
+
 def get_session():
     session = requests.Session()
     headers = {
@@ -35,22 +40,14 @@ def get_session():
 
     try:
         session.get("http://tv.redmax.tv/stalker_portal/c/", timeout=5)
-    except Exception:
-        pass
-
-    try:
         session.get("http://tv.redmax.tv/stalker_portal/c/xpcom.common.js", timeout=5)
-    except Exception:
-        pass
-
-    try:
         session.get("http://tv.redmax.tv/stalker_portal/c/version.js", timeout=5)
     except Exception:
         pass
 
     token = ""
     try:
-        hs_url = "http://tv.redmax.tv/stalker_portal/server/load.php?type=stb&action=handshake&token=&JsHttpRequest=1-xml"
+        hs_url = f"{PORTAL_URL}?type=stb&action=handshake&token=&JsHttpRequest=1-xml"
         r = session.get(hs_url, timeout=10).json()
         token = r.get("js", {}).get("token", "")
         if token:
@@ -58,6 +55,7 @@ def get_session():
             session.headers.update({"Authorization": f"Bearer {token}"})
     except Exception:
         pass
+
     metrics_data = json.dumps({
         "type": "stb",
         "model": "MAG254",
@@ -79,15 +77,10 @@ def get_session():
         f"&metrics={metrics_data}"
         f"&hw_version_2=aa9eff686503b38e40ac84c5a469d92cf15adee3&timestamp={int(time.time())}&api_signature=262&prehash=d9b973e8083c84bd1a68a33147cdae39b605acc7"
     )
-    
-    try:
-        session.get(prof_url, timeout=10)
-    except Exception:
-        pass
 
     try:
-        acc_url = f"{PORTAL_URL}?type=account_info&action=get_main_info&JsHttpRequest=1-xml"
-        session.get(acc_url, timeout=10)
+        session.get(prof_url, timeout=10)
+        session.get(f"{PORTAL_URL}?type=account_info&action=get_main_info&JsHttpRequest=1-xml", timeout=10)
     except Exception:
         pass
 
@@ -98,57 +91,105 @@ def update_playlist():
     status_data["status"] = "Yangilanmoqda..."
 
     session = get_session()
-    channels_url = f"{PORTAL_URL}?type=itv&action=get_all_channels&JsHttpRequest=1-xml"
+    
+    # 1. Получаем список жанров/категорий
+    genres = ["", "*", "0"]
+    try:
+        genres_url = f"{PORTAL_URL}?type=itv&action=get_genres&JsHttpRequest=1-xml"
+        genres_resp = session.get(genres_url, timeout=10).json()
+        js_genres = genres_resp.get("js", [])
+        if isinstance(js_genres, list):
+            for g in js_genres:
+                g_id = g.get("id")
+                if g_id is not None and str(g_id) not in [str(x) for x in genres]:
+                    genres.append(str(g_id))
+    except Exception:
+        pass
 
-    channels = []
-    for _ in range(2):
+    # 2. Получаем каналы по всем категориям
+    raw_channels = []
+    seen_cmds = set()
+
+    for genre in genres:
+        urls_to_try = [
+            f"{PORTAL_URL}?type=itv&action=get_all_channels&genre={genre}&JsHttpRequest=1-xml",
+            f"{PORTAL_URL}?type=itv&action=get_all_channels&genre={genre}&p=1&JsHttpRequest=1-xml"
+        ]
+        for ch_url in urls_to_try:
+            try:
+                res = session.get(ch_url, timeout=8).json()
+                js_data = res.get("js", {})
+                data = []
+                if isinstance(js_data, list):
+                    data = js_data
+                elif isinstance(js_data, dict):
+                    data = js_data.get("data", []) or js_data.get("channels", [])
+
+                if isinstance(data, list) and len(data) > 0:
+                    for ch in data:
+                        cmd = ch.get("cmd", "")
+                        if cmd and cmd not in seen_cmds:
+                            seen_cmds.add(cmd)
+                            raw_channels.append(ch)
+            except Exception:
+                continue
+
+    channels_list = []
+    
+    # 3. Собираем и очищаем ссылки для каждого канала
+    for ch in raw_channels:
+        ch_name = ch.get("name", "Kanal")
+        cmd = ch.get("cmd", "")
+        timeshift = ch.get("timeshift", 0)
+
+        if not cmd:
+            continue
+
+        stream_url = ""
         try:
-            channels_res = session.get(channels_url, timeout=10).json()
-            channels = channels_res.get("js", {}).get("data", [])
-            if channels:
-                break
-        except Exception:
-            time.sleep(1)
+            clean_cmd = cmd
+            for prefix in ["ffmpeg ", "ch:ffrt ", "ffrt ", "ch:"]:
+                if clean_cmd.startswith(prefix):
+                    clean_cmd = clean_cmd[len(prefix):].strip()
 
-    if not channels:
-        cmd = "ffmpeg https://stream.redmax.tv/lb0/5ukraina/index.m3u8"
-        ch_name = "5 Kanal HD"
-    else:
-        target_channel = channels[0]
-        ch_name = target_channel.get("name", "Kanal")
-        cmd = target_channel.get("cmd", "ffmpeg https://stream.redmax.tv/lb0/5ukraina/index.m3u8")
+            link_url = f"{PORTAL_URL}?type=itv&action=create_link&cmd={requests.utils.quote(clean_cmd)}&JsHttpRequest=1-xml"
+            link_res = session.get(link_url, timeout=5).json()
+            stream_cmd = link_res.get("js", {}).get("cmd") or link_res.get("js", {}).get("url") or ""
+
+            if stream_cmd:
+                for prefix in ["ffrt3 ", "ffrt2 ", "ffrt ", "ffmpeg ", "ch:ffrt ", "ch:"]:
+                    if stream_cmd.startswith(prefix):
+                        stream_cmd = stream_cmd[len(prefix):].strip()
+                stream_url = stream_cmd
+
+            if not stream_url and "http" in cmd:
+                stream_url = cmd
+                for prefix in ["ffmpeg ", "ch:ffrt ", "ffrt ", "ch:"]:
+                    if stream_url.startswith(prefix):
+                        stream_url = stream_url[len(prefix):].strip()
+
+        except Exception:
+            pass
+
+        if stream_url:
+            channels_list.append({
+                "name": ch_name,
+                "url": stream_url,
+                "cmd": cmd,
+                "timeshift": timeshift
+            })
+
+    # Запасной канал, если список пуст
+    if not channels_list:
+        channels_list = [{
+            "name": "5 Kanal HD",
+            "url": "https://stream.redmax.tv/lb0/5ukraina/index.m3u8",
+            "cmd": "ffmpeg https://stream.redmax.tv/lb0/5ukraina/index.m3u8",
+            "timeshift": 0
+        }]
 
     temp_file = "/tmp/playlist.tmp"
     final_file = "/tmp/playlist.json"
-
-    success = False
-    stream_url = None
-
-    for attempt in range(2):
-        try:
-            time.sleep(0.2)
-            link_url = f"{PORTAL_URL}?type=itv&action=create_link&cmd={requests.utils.quote(cmd)}&JsHttpRequest=1-xml"
-            link_res = session.get(link_url, timeout=10).json()
-            stream_cmd = link_res.get("js", {}).get("cmd")
-
-            if stream_cmd:
-                if stream_cmd.startswith("ffmpeg "):
-                    stream_url = stream_cmd.replace("ffmpeg ", "").strip()
-                else:
-                    stream_url = stream_cmd
-                success = True
-                break
-        except Exception:
-            session = get_session()
-
-    if not success or not stream_url:
-        stream_url = (
-            cmd.replace("ffmpeg ", "").replace("ch:ffrt ", "").strip()
-            if "http" in cmd
-            else "https://stream.redmax.tv/lb0/5ukraina/index.m3u8"
-        )
-
-    channels_list = [{"name": ch_name, "url": stream_url}]
 
     with open(temp_file, "w", encoding="utf-8") as f:
         json.dump(channels_list, f, ensure_ascii=False, indent=4)
@@ -158,17 +199,19 @@ def update_playlist():
     os.rename(temp_file, final_file)
 
     status_data["last_update"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    status_data["total_channels"] = len(channels_list)
     status_data["status"] = "Muvaffaqiyatli"
 
-@app.get("/", response_class=HTMLResponse)
-def admin_panel():
-    # Автообновление плейлиста на лету, если его нет или прошло больше 60 секунд
-    if not os.path.exists("/tmp/playlist.json") or (time.time() - os.path.getmtime("/tmp/playlist.json") > 60):
+def ensure_playlist():
+    if not os.path.exists("/tmp/playlist.json") or (time.time() - os.path.getmtime("/tmp/playlist.json") > 300):
         try:
             update_playlist()
         except Exception:
             pass
 
+@app.get("/", response_class=HTMLResponse)
+def admin_panel():
+    ensure_playlist()
     return f"""
     <!DOCTYPE html>
     <html lang="uz">
@@ -187,10 +230,11 @@ def admin_panel():
         <div class="card">
             <h2>Admin Panel</h2>
             <p>Holati: <span class="badge">{status_data["status"]}</span></p>
-            <p><b>Kanal:</b> {status_data["total_channels"]} ta</p>
+            <p><b>Kanallar soni:</b> {status_data["total_channels"]} ta</p>
             <p><b>Oxirgi yangilangan vaqt:</b> {status_data["last_update"]}</p>
             <hr style="border: 0.5px solid #334155; margin: 20px 0;">
-            <a href="http://rebrand.ly/TvZaTak" target="_blank">TEST ADMIN</a>
+            <a href="/playlist.json">JSON Playlist</a>
+            <a href="/pl.m3u8">M3U8 Playlist</a>
         </div>
     </body>
     </html>
@@ -202,26 +246,16 @@ def health_check():
 
 @app.get("/playlist.json")
 def download_json():
-    if not os.path.exists("/tmp/playlist.json") or (time.time() - os.path.getmtime("/tmp/playlist.json") > 60):
-        try:
-            update_playlist()
-        except Exception:
-            pass
-
+    ensure_playlist()
     if os.path.exists("/tmp/playlist.json"):
         with open("/tmp/playlist.json", "r", encoding="utf-8") as f:
             content = json.load(f)
         return content
-    return {"error": "Hali playlist tayyor emas!"}, 404
+    return JSONResponse(status_code=404, content={"error": "Hali playlist tayyor emas!"})
 
 @app.get("/pl.m3u8", response_class=PlainTextResponse)
 def download_m3u8():
-    if not os.path.exists("/tmp/playlist.json") or (time.time() - os.path.getmtime("/tmp/playlist.json") > 60):
-        try:
-            update_playlist()
-        except Exception:
-            pass
-
+    ensure_playlist()
     if not os.path.exists("/tmp/playlist.json"):
         return "#EXTM3U\n# Xatolik: Playlist hali tayyorlanmadi"
 
@@ -235,13 +269,16 @@ def download_m3u8():
     for ch in channels:
         name = ch.get("name", "Kanal")
         url = ch.get("url", "")
-        m3u_lines.append(f"#EXTINF:-1,{name}")
+        timeshift = ch.get("timeshift", 0)
+        
+        tvg_shift_attr = f' tvg-shift="{timeshift}"' if timeshift else ''
+        catchup_attr = ' catchup="default" catchup-days="3"' if timeshift else ''
+        
+        m3u_lines.append(f"#EXTINF:-1{tvg_shift_attr}{catchup_attr},{name}")
         m3u_lines.append(url)
 
     return "\n".join(m3u_lines)
-from fastapi.responses import Response
 
-@app.get('/favicon.ico', include_in_schema=False)
+@app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
-    return Response(content=b'', media_type='image/vnd.microsoft.icon')
- 
+    return Response(content=b"", media_type="image/vnd.microsoft.icon")
