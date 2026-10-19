@@ -5,8 +5,8 @@ import time
 from fastapi import FastAPI, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 import requests
-PORTAL_URL = "http://portal.wisp.cat/stalker_portal/server/load.php"
-MAC_BASE = "00:1A:79:65:7B:01"
+PORTAL_URL = "http://tv.redmax.tv/stalker_portal/server/load.php"
+MAC_BASE = "00:1A:79:00:02:FE"
 BASE_PROXY_URL = "https://stream-tv-digital.hf.space"
 app = FastAPI()
 status_data = {
@@ -22,39 +22,39 @@ def get_session():
             " Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3"
         ),
         "X-User-Agent": "Model: MAG250; Link: WiFi",
-        "Referer": "http://portal.wisp.cat/stalker_portal/c/index.html",
+        "Referer": "http://tv.redmax.tv/stalker_portal/c/index.html",
         "Accept": "*/*",
         "Accept-Encoding": "gzip, deflate",
         "Connection": "close",
         "Pragma": "no-cache",
     }
     session.headers.update(headers)
-    session.cookies.set("mac", MAC_BASE, domain="portal.wisp.cat")
-    session.cookies.set("stb_lang", "en", domain="portal.wisp.cat")
-    session.cookies.set("timezone", "Europe/London", domain="portal.wisp.cat")
+    session.cookies.set("mac", MAC_BASE, domain="tv.redmax.tv")
+    session.cookies.set("stb_lang", "en", domain="tv.redmax.tv")
+    session.cookies.set("timezone", "Europe/London", domain="tv.redmax.tv")
 
     try:
-        session.get("http://portal.wisp.cat/stalker_portal/c/", timeout=5)
+        session.get("http://tv.redmax.tv/stalker_portal/c/", timeout=5)
     except Exception:
         pass
 
     try:
-        session.get("http://portal.wisp.cat/stalker_portal/c/xpcom.common.js", timeout=5)
+        session.get("http://tv.redmax.tv/stalker_portal/c/xpcom.common.js", timeout=5)
     except Exception:
         pass
 
     try:
-        session.get("http://portal.wisp.cat/stalker_portal/c/version.js", timeout=5)
+        session.get("http://tv.redmax.tv/stalker_portal/c/version.js", timeout=5)
     except Exception:
         pass
 
     token = ""
     try:
-        hs_url = "http://portal.wisp.cat/stalker_portal/server/load.php?type=stb&action=handshake&token=&JsHttpRequest=1-xml"
+        hs_url = "http://tv.redmax.tv/stalker_portal/server/load.php?type=stb&action=handshake&token=&JsHttpRequest=1-xml"
         r = session.get(hs_url, timeout=10).json()
         token = r.get("js", {}).get("token", "")
         if token:
-            session.cookies.set("token", token, domain="portal.wisp.cat")
+            session.cookies.set("token", token, domain="tv.redmax.tv")
             session.headers.update({"Authorization": f"Bearer {token}"})
     except Exception:
         pass
@@ -62,8 +62,8 @@ def get_session():
         "type": "stb",
         "model": "MAG254",
         "mac": MAC_BASE,
-        "sn": "C29FF3A4A8F7B",
-        "uid": "662591BD155567306F4C764C06503277A88F46A33171F128147ABFD5BDEF3EF3",
+        "sn": "AFDDBB900DAC7",
+        "uid": "1790027FB626094E452F3A04C2527AC60571CEE93E1FD5DE5C4991BA634128C6",
         "random": "b9a90b92ac722147751dbbf9a06fd3a6dec9c08f"
     })
     token_param = f"&token={token}" if token else ""
@@ -71,13 +71,13 @@ def get_session():
         f"{PORTAL_URL}?type=stb&action=get_profile&JsHttpRequest=1-xml&hd=1"
         f"{token_param}"
         "&ver=ImageDescription: 0.2.18-r23-250; ImageDate: Thu Sep 13 11:31:16 EEST 2018; PORTAL version: 5.3.0; API Version: JS API version: 343; STB API version: 146; Player Engine version: 0x58c"
-        "&num_banks=2&sn=C29FF3A4A8F7B&stb_type=MAG250&client_type=STB&image_version=218&video_out=hdmi"
-        "&device_id=ED8631D5017C0DC1C1F6EF359AED6D2A894486F6D12876E3BE38B9A377953846"
-        "&device_id2=ED8631D5017C0DC1C1F6EF359AED6D2A894486F6D12876E3BE38B9A377953846"
-        "&signature=02D90DC0532B449B16E8DC52B55521F8823B0FDD8B7C09D80930627FBF4EC212"
+        "&num_banks=2&sn=AFDDBB900DAC7&stb_type=MAG250&client_type=STB&image_version=218&video_out=hdmi"
+        "&device_id=99C6BE2AE772CC6660BE59B7AA0CD132C1463315C7FB1611518D6C3CCD4F0CE2"
+        "&device_id2=99C6BE2AE772CC6660BE59B7AA0CD132C1463315C7FB1611518D6C3CCD4F0CE2"
+        "&signature=F815A102A114ACF1890EF21CAB0D11451C5732B6FE3A253AC4A26239C0CBD9AF"
         "&auth_second_step=1&hw_version=1.7-BD-00&not_valid_token=0"
         f"&metrics={metrics_data}"
-        f"&hw_version_2=df793726342adb400f308f1c587784ae29c4f28a&timestamp={int(time.time())}&api_signature=262&prehash=1bef54600c63cfdc086dad053d447f3ade6e628f"
+        f"&hw_version_2=aa9eff686503b38e40ac84c5a469d92cf15adee3&timestamp={int(time.time())}&api_signature=262&prehash=d9b973e8083c84bd1a68a33147cdae39b605acc7"
     )
     
     try:
@@ -111,12 +111,12 @@ def update_playlist():
             time.sleep(1)
 
     if not channels:
-        cmd = "ffmpeg http://lb.wisp.cat/lb0/5kanalHDUA/video.m3u8"
+        cmd = "ffmpeg https://stream.redmax.tv/lb0/5ukraina/index.m3u8"
         ch_name = "5 Kanal HD"
     else:
         target_channel = channels[0]
         ch_name = target_channel.get("name", "Kanal")
-        cmd = target_channel.get("cmd", "ffmpeg http://lb.wisp.cat/lb0/5kanalHDUA/video.m3u8")
+        cmd = target_channel.get("cmd", "ffmpeg https://stream.redmax.tv/lb0/5ukraina/index.m3u8")
 
     temp_file = "/tmp/playlist.tmp"
     final_file = "/tmp/playlist.json"
@@ -145,7 +145,7 @@ def update_playlist():
         stream_url = (
             cmd.replace("ffmpeg ", "").replace("ch:ffrt ", "").strip()
             if "http" in cmd
-            else "http://lb.wisp.cat/lb0/5kanalHDUA/video.m3u8"
+            else "https://stream.redmax.tv/lb0/5ukraina/index.m3u8"
         )
 
     channels_list = [{"name": ch_name, "url": stream_url}]
@@ -244,3 +244,4 @@ from fastapi.responses import Response
 @app.get('/favicon.ico', include_in_schema=False)
 async def favicon():
     return Response(content=b'', media_type='image/vnd.microsoft.icon')
+ 
