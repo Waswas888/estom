@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Red
 PORTAL_URL = "http://tv.redmax.tv/stalker_portal/server/load.php"
 STREAM_BASE_HOST = "http://stream.redmax.tv/"
 MAC_BASE = "00:1A:79:00:02:FE"
-BASE_PROXY_URL = "https://stream-tv-digital.hf.space"  # Замените на ваш домен Hugging Face / Vercel
+BASE_PROXY_URL = "https://estom.vercel.app"  # Замените на ваш домен Hugging Face / Vercel
 
 app = FastAPI()
 
