@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Red
 PORTAL_URL = "http://tv.redmax.tv/stalker_portal/server/load.php"
 STREAM_BASE_HOST = "http://stream.redmax.tv/"
 MAC_BASE = "00:1A:79:00:02:FE"
-BASE_PROXY_URL = "https://estom.vercel.app/" 
+BASE_PROXY_URL = "https://estom.vercel.app"  # Ваш домен на Vercel
 
 # --- НАСТРОЙКИ БЕЗОПАСНОСТИ И ФИЛЬТРАЦИИ ---
 SECRET_KEY = "000"
@@ -31,15 +31,20 @@ status_data = {
     "status": "Kuting...",
 }
 
-# --- ФУНКЦИЯ ПРОВЕРКИ И БЛОКИРОВКИ ---
+# --- ЕДИНАЯ ФУНКЦИЯ ПРОВЕРКИ И БЛОКИРОВКИ ---
 def is_request_blocked(request: Request) -> bool:
-    # 1. Получаем IP клиента
+    # 1. Проверка секретного ключа из параметров URL (?key=000)
+    user_key = request.query_params.get("key", "")
+    if user_key != SECRET_KEY:
+        return True
+
+    # 2. Получаем IP клиента
     client_ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "").split(",")[0].strip()
     
-    # 2. Получаем User-Agent
+    # 3. Получаем User-Agent
     ua = request.headers.get("user-agent", "").lower()
     
-    # 3. Получаем страну (если есть заголовок от Cloudflare/Vercel)
+    # 4. Получаем страну (заголовок от Cloudflare/Vercel)
     country = request.headers.get("cf-ipcountry", "").upper()
 
     # Проверка на поисковых ботов и сканеры
@@ -52,7 +57,7 @@ def is_request_blocked(request: Request) -> bool:
         client_ip.startswith("2a02:3032:")
     )
 
-    # Проверка по стране (если страна передана и её нет в белом списке)
+    # Проверка по стране
     is_disallowed_country = bool(country and country not in ALLOWED_COUNTRIES)
 
     return is_search_bot or is_banned_ip or is_disallowed_country
@@ -61,10 +66,7 @@ def is_request_blocked(request: Request) -> bool:
 def get_session():
     session = requests.Session()
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like"
-            " Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3"
-        ),
+        "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3",
         "X-User-Agent": "Model: MAG250; Link: WiFi",
         "Referer": "http://tv.redmax.tv/stalker_portal/c/index.html",
         "Accept": "*/*",
@@ -202,7 +204,7 @@ def ensure_playlist():
 def admin_panel(request: Request):
     ua = request.headers.get("user-agent", "").lower()
 
-    # 1. Ответ для Telegram-бота (красивое превью)
+    # 1. Ответ для Telegram-бота (превью)
     if "telegrambot" in ua:
         preview_html = f"""<!DOCTYPE html>
         <html>
@@ -218,8 +220,9 @@ def admin_panel(request: Request):
         </html>"""
         return HTMLResponse(content=preview_html)
 
-    # 2. Если клиент заблокирован -> перенаправляем в Telegram группу
-    if is_request_blocked(request):
+    # 2. Если открывают корень в браузере с верным ключом
+    user_key = request.query_params.get("key", "")
+    if user_key != SECRET_KEY:
         return RedirectResponse(url=TELEGRAM_GROUP_URL, status_code=302)
 
     ensure_playlist()
@@ -243,8 +246,8 @@ def admin_panel(request: Request):
             <p><b>Kanallar soni:</b> {status_data["total_channels"]} ta</p>
             <p><b>Oxirgi yangilangan vaqt:</b> {status_data["last_update"]}</p>
             <hr style="border: 0.5px solid #334155; margin: 20px 0;">
-            <a href="/playlist.json">JSON Playlist</a>
-            <a href="/pl.m3u8">M3U8 Playlist</a>
+            <a href="/playlist.json?key={SECRET_KEY}">JSON Playlist</a>
+            <a href="/pl.m3u8?key={SECRET_KEY}">M3U8 Playlist</a>
         </div>
     </body>
     </html>
@@ -253,7 +256,7 @@ def admin_panel(request: Request):
 
 @app.get("/pl.m3u8", response_class=PlainTextResponse)
 def download_m3u8(request: Request):
-    # Если заблокирован -> отдаем заблокированному видео-заглушку вместо основного плейлиста
+    # ПРОВЕРКА КЛЮЧА И БЛОКИРОВКИ: Заблокированных кидает на видеозаглушку!
     if is_request_blocked(request):
         return RedirectResponse(url=STUB_VIDEO_URL, status_code=302)
 
@@ -268,7 +271,8 @@ def download_m3u8(request: Request):
     for idx, ch in enumerate(channels):
         name = ch.get("name", "Kanal")
         timeshift = ch.get("timeshift", 0)
-        stream_link = f"{BASE_PROXY_URL}/stream/{idx}"
+        # Каждая ссылка на поток содержит секретный ключ
+        stream_link = f"{BASE_PROXY_URL}/stream/{idx}?key={SECRET_KEY}"
         
         tvg_shift_attr = f' tvg-shift="{timeshift}"' if timeshift else ''
         catchup_attr = ' catchup="default" catchup-days="3"' if timeshift else ''
@@ -281,12 +285,12 @@ def download_m3u8(request: Request):
 
 @app.get("/stream/{index}")
 def proxy_stream(index: int, request: Request):
-    # Если заблокирован -> отдаем ссылку на видео-заглушку
+    # ПРОВЕРКА КЛЮЧА И БЛОКИРОВКИ: Заблокированных кидает на видеозаглушку!
     if is_request_blocked(request):
         return RedirectResponse(url=STUB_VIDEO_URL, status_code=302)
 
     if not os.path.exists("/tmp/playlist.json"):
-        return Response("Playlist topilmadi", status_code=404)
+        return RedirectResponse(url=STUB_VIDEO_URL, status_code=302)
 
     try:
         with open("/tmp/playlist.json", "r", encoding="utf-8") as f:
@@ -294,7 +298,7 @@ def proxy_stream(index: int, request: Request):
         target = channels[index]
         cmd = target["cmd"]
     except Exception:
-        return Response("Kanal topilmadi", status_code=404)
+        return RedirectResponse(url=STUB_VIDEO_URL, status_code=302)
 
     session = get_session()
     stream_url = ""
@@ -326,7 +330,7 @@ def proxy_stream(index: int, request: Request):
     if stream_url:
         return RedirectResponse(url=stream_url, status_code=302)
 
-    return Response("Stream url olinmadi", status_code=500)
+    return RedirectResponse(url=STUB_VIDEO_URL, status_code=302)
 
 
 @app.get("/favicon.ico", include_in_schema=False)
