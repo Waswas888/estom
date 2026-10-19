@@ -285,24 +285,45 @@ def download_m3u8(request: Request):
 
 @app.get("/stream/{index}")
 def proxy_stream(index: int, request: Request):
-    # ПРОВЕРКА КЛЮЧА И БЛОКИРОВКИ: Заблокированных кидает на видеозаглушку!
+    # 1. ПРОВЕРКА КЛЮЧА (?key=000) И БЛОКИРОВКИ (IP / боты / страны)
     if is_request_blocked(request):
         return RedirectResponse(url=STUB_VIDEO_URL, status_code=302)
 
+    # 2. Восстанавливаем плейлист, если временный файл /tmp был удален Vercel
     if not os.path.exists("/tmp/playlist.json"):
+        try:
+            update_playlist()
+        except Exception:
+            pass
+
+    # 3. Читаем сохраненные каналы
+    channels = []
+    if os.path.exists("/tmp/playlist.json"):
+        try:
+            with open("/tmp/playlist.json", "r", encoding="utf-8") as f:
+                channels = json.load(f)
+        except Exception:
+            pass
+
+    # Если индекс вне диапазона или файл пуст, пробуем принудительно обновить еще раз
+    if not channels or index >= len(channels):
+        try:
+            update_playlist()
+            if os.path.exists("/tmp/playlist.json"):
+                with open("/tmp/playlist.json", "r", encoding="utf-8") as f:
+                    channels = json.load(f)
+        except Exception:
+            pass
+
+    # Если канал так и не найден в списке -> отдаем заглушку
+    if not channels or index >= len(channels):
         return RedirectResponse(url=STUB_VIDEO_URL, status_code=302)
 
-    try:
-        with open("/tmp/playlist.json", "r", encoding="utf-8") as f:
-            channels = json.load(f)
-        target = channels[index]
-        cmd = target["cmd"]
-    except Exception:
-        return RedirectResponse(url=STUB_VIDEO_URL, status_code=302)
-
+    cmd = channels[index].get("cmd", "")
     session = get_session()
     stream_url = ""
 
+    # 4. Запрашиваем СВЕЖИЙ ТОКЕН у портала на лету
     try:
         clean_cmd = cmd
         for prefix in ["ffmpeg ", "ch:ffrt ", "ffrt ", "ch:"]:
@@ -327,11 +348,12 @@ def proxy_stream(index: int, request: Request):
             if stream_url.startswith(prefix):
                 stream_url = stream_url[len(prefix):].strip()
 
+    # 5. Если ссылка получена — отдаем редирект на поток со свежим токеном
     if stream_url:
         return RedirectResponse(url=stream_url, status_code=302)
 
+    # Редирект на заглушку происходит только если портал не выдал токен
     return RedirectResponse(url=STUB_VIDEO_URL, status_code=302)
-
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
