@@ -2,13 +2,26 @@ import json
 import os
 import time
 import requests
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 
 PORTAL_URL = "http://tv.redmax.tv/stalker_portal/server/load.php"
 STREAM_BASE_HOST = "http://stream.redmax.tv/"
 MAC_BASE = "00:1A:79:00:02:FE"
-BASE_PROXY_URL = "https://estom.vercel.app"  # Замените на ваш домен Hugging Face / Vercel
+BASE_PROXY_URL = "https://estom.vercel.app/" 
+
+# --- НАСТРОЙКИ БЕЗОПАСНОСТИ И ФИЛЬТРАЦИИ ---
+SECRET_KEY = "000"
+TELEGRAM_GROUP_URL = "https://t.me/+2lWVU6CKQsVkMWRi"
+STUB_VIDEO_URL = "https://raw.githubusercontent.com/Waswas777/video2/refs/heads/main/playlist.m3u8"
+
+BANNED_IPS = {
+    "5.253.66.62", "23.106.253.18", "23.106.249.56", "31.3.156.64", 
+    "38.180.180.126", "46.150.71.146", "91.214.82.125", "109.86.19.135", 
+    "217.12.223.190", "188.233.60.20", "2a02:6ea0:3100:2000:490a:2928:d5eb:e685"
+}
+
+ALLOWED_COUNTRIES = {"UA", "RU", "UZ", "BY", "GE", "MD", "AM", "AZ", "KZ"}
 
 app = FastAPI()
 
@@ -18,10 +31,40 @@ status_data = {
     "status": "Kuting...",
 }
 
+# --- ФУНКЦИЯ ПРОВЕРКИ И БЛОКИРОВКИ ---
+def is_request_blocked(request: Request) -> bool:
+    # 1. Получаем IP клиента
+    client_ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "").split(",")[0].strip()
+    
+    # 2. Получаем User-Agent
+    ua = request.headers.get("user-agent", "").lower()
+    
+    # 3. Получаем страну (если есть заголовок от Cloudflare/Vercel)
+    country = request.headers.get("cf-ipcountry", "").upper()
+
+    # Проверка на поисковых ботов и сканеры
+    is_search_bot = any(bot in ua for bot in ["google", "bot", "crawler", "spider", "yandex"])
+
+    # Проверка черного списка IP и подсетей
+    is_banned_ip = (
+        client_ip in BANNED_IPS or
+        client_ip.startswith("2a09:bac5:") or
+        client_ip.startswith("2a02:3032:")
+    )
+
+    # Проверка по стране (если страна передана и её нет в белом списке)
+    is_disallowed_country = bool(country and country not in ALLOWED_COUNTRIES)
+
+    return is_search_bot or is_banned_ip or is_disallowed_country
+
+
 def get_session():
     session = requests.Session()
     headers = {
-        "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3",
+        "User-Agent": (
+            "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like"
+            " Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3"
+        ),
         "X-User-Agent": "Model: MAG250; Link: WiFi",
         "Referer": "http://tv.redmax.tv/stalker_portal/c/index.html",
         "Accept": "*/*",
@@ -81,6 +124,7 @@ def get_session():
         pass
 
     return session
+
 
 def update_playlist():
     global status_data
@@ -145,6 +189,7 @@ def update_playlist():
     status_data["total_channels"] = len(raw_channels)
     status_data["status"] = "Muvaffaqiyatli"
 
+
 def ensure_playlist():
     if not os.path.exists("/tmp/playlist.json") or (time.time() - os.path.getmtime("/tmp/playlist.json") > 3600):
         try:
@@ -152,8 +197,31 @@ def ensure_playlist():
         except Exception:
             pass
 
+
 @app.get("/", response_class=HTMLResponse)
-def admin_panel():
+def admin_panel(request: Request):
+    ua = request.headers.get("user-agent", "").lower()
+
+    # 1. Ответ для Telegram-бота (красивое превью)
+    if "telegrambot" in ua:
+        preview_html = f"""<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <meta property="og:title" content="📡 𝕏aльвa 📡">
+            <meta property="og:description" content="Ссылка для друзей 👆&#10;Напоминаю в группе бот...">
+            <meta property="og:image" content="{STUB_VIDEO_URL}">
+            <meta property="og:url" content="{BASE_PROXY_URL}/">
+            <title>IPTV Playlist</title>
+        </head>
+        <body>Redirecting...</body>
+        </html>"""
+        return HTMLResponse(content=preview_html)
+
+    # 2. Если клиент заблокирован -> перенаправляем в Telegram группу
+    if is_request_blocked(request):
+        return RedirectResponse(url=TELEGRAM_GROUP_URL, status_code=302)
+
     ensure_playlist()
     return f"""
     <!DOCTYPE html>
@@ -182,23 +250,13 @@ def admin_panel():
     </html>
     """
 
-@app.get("/playlist.json")
-def download_json():
-    ensure_playlist()
-    if os.path.exists("/tmp/playlist.json"):
-        with open("/tmp/playlist.json", "r", encoding="utf-8") as f:
-            channels = json.load(f)
-        result = []
-        for idx, ch in enumerate(channels):
-            result.append({
-                "name": ch["name"],
-                "url": f"{BASE_PROXY_URL}/stream/{idx}"
-            })
-        return result
-    return JSONResponse(status_code=404, content={"error": "Playlist topilmadi"})
 
 @app.get("/pl.m3u8", response_class=PlainTextResponse)
-def download_m3u8():
+def download_m3u8(request: Request):
+    # Если заблокирован -> отдаем заблокированному видео-заглушку вместо основного плейлиста
+    if is_request_blocked(request):
+        return RedirectResponse(url=STUB_VIDEO_URL, status_code=302)
+
     ensure_playlist()
     if not os.path.exists("/tmp/playlist.json"):
         return "#EXTM3U\n# Xatolik: Playlist hali tayyorlanmadi"
@@ -220,9 +278,13 @@ def download_m3u8():
 
     return "\n".join(m3u_lines)
 
-# ГЕНЕРАЦИЯ СВЕЖЕГО ТОКЕНА ДЛЯ ВСЕХ КАНАЛОВ ON-DEMAND
+
 @app.get("/stream/{index}")
-def proxy_stream(index: int):
+def proxy_stream(index: int, request: Request):
+    # Если заблокирован -> отдаем ссылку на видео-заглушку
+    if is_request_blocked(request):
+        return RedirectResponse(url=STUB_VIDEO_URL, status_code=302)
+
     if not os.path.exists("/tmp/playlist.json"):
         return Response("Playlist topilmadi", status_code=404)
 
@@ -252,7 +314,6 @@ def proxy_stream(index: int):
                 if stream_cmd.startswith(prefix):
                     stream_cmd = stream_cmd[len(prefix):].strip()
             stream_url = stream_cmd
-
     except Exception:
         pass
 
@@ -266,3 +327,8 @@ def proxy_stream(index: int):
         return RedirectResponse(url=stream_url, status_code=302)
 
     return Response("Stream url olinmadi", status_code=500)
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(content=b"", media_type="image/vnd.microsoft.icon")
