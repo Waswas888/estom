@@ -1,4 +1,3 @@
-import hashlib
 import json
 import os
 import time
@@ -9,7 +8,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Red
 PORTAL_URL = "http://tv.redmax.tv/stalker_portal/server/load.php"
 STREAM_BASE_HOST = "http://stream.redmax.tv/"
 MAC_BASE = "00:1A:79:00:02:FE"
-BASE_PROXY_URL = "https://stream-tv-digital.hf.space"
+BASE_PROXY_URL = "https://stream-tv-digital.hf.space"  # Замените на ваш домен Hugging Face / Vercel
 
 app = FastAPI()
 
@@ -22,10 +21,7 @@ status_data = {
 def get_session():
     session = requests.Session()
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like"
-            " Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3"
-        ),
+        "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3",
         "X-User-Agent": "Model: MAG250; Link: WiFi",
         "Referer": "http://tv.redmax.tv/stalker_portal/c/index.html",
         "Accept": "*/*",
@@ -89,10 +85,8 @@ def get_session():
 def update_playlist():
     global status_data
     status_data["status"] = "Yangilanmoqda..."
-
     session = get_session()
-    
-    # 1. Получаем список жанров/категорий
+
     genres = ["", "*", "0"]
     try:
         genres_url = f"{PORTAL_URL}?type=itv&action=get_genres&JsHttpRequest=1-xml"
@@ -106,16 +100,15 @@ def update_playlist():
     except Exception:
         pass
 
-    # 2. Получаем каналы по всем категориям
     raw_channels = []
     seen_cmds = set()
 
     for genre in genres:
-        urls_to_try = [
+        urls = [
             f"{PORTAL_URL}?type=itv&action=get_all_channels&genre={genre}&JsHttpRequest=1-xml",
             f"{PORTAL_URL}?type=itv&action=get_all_channels&genre={genre}&p=1&JsHttpRequest=1-xml"
         ]
-        for ch_url in urls_to_try:
+        for ch_url in urls:
             try:
                 res = session.get(ch_url, timeout=8).json()
                 js_data = res.get("js", {})
@@ -130,80 +123,30 @@ def update_playlist():
                         cmd = ch.get("cmd", "")
                         if cmd and cmd not in seen_cmds:
                             seen_cmds.add(cmd)
-                            raw_channels.append(ch)
+                            raw_channels.append({
+                                "name": ch.get("name", "Kanal"),
+                                "cmd": cmd,
+                                "timeshift": ch.get("timeshift", 0)
+                            })
             except Exception:
                 continue
-
-    channels_list = []
-    
-    # 3. Собираем и очищаем ссылки для каждого канала
-    for ch in raw_channels:
-        ch_name = ch.get("name", "Kanal")
-        cmd = ch.get("cmd", "")
-        timeshift = ch.get("timeshift", 0)
-
-        if not cmd:
-            continue
-
-        stream_url = ""
-        try:
-            clean_cmd = cmd
-            for prefix in ["ffmpeg ", "ch:ffrt ", "ffrt ", "ch:"]:
-                if clean_cmd.startswith(prefix):
-                    clean_cmd = clean_cmd[len(prefix):].strip()
-
-            link_url = f"{PORTAL_URL}?type=itv&action=create_link&cmd={requests.utils.quote(clean_cmd)}&JsHttpRequest=1-xml"
-            link_res = session.get(link_url, timeout=5).json()
-            stream_cmd = link_res.get("js", {}).get("cmd") or link_res.get("js", {}).get("url") or ""
-
-            if stream_cmd:
-                for prefix in ["ffrt3 ", "ffrt2 ", "ffrt ", "ffmpeg ", "ch:ffrt ", "ch:"]:
-                    if stream_cmd.startswith(prefix):
-                        stream_cmd = stream_cmd[len(prefix):].strip()
-                stream_url = stream_cmd
-
-            if not stream_url and "http" in cmd:
-                stream_url = cmd
-                for prefix in ["ffmpeg ", "ch:ffrt ", "ffrt ", "ch:"]:
-                    if stream_url.startswith(prefix):
-                        stream_url = stream_url[len(prefix):].strip()
-
-        except Exception:
-            pass
-
-        if stream_url:
-            channels_list.append({
-                "name": ch_name,
-                "url": stream_url,
-                "cmd": cmd,
-                "timeshift": timeshift
-            })
-
-    # Запасной канал, если список пуст
-    if not channels_list:
-        channels_list = [{
-            "name": "5 Kanal HD",
-            "url": "https://stream.redmax.tv/lb0/5ukraina/index.m3u8",
-            "cmd": "ffmpeg https://stream.redmax.tv/lb0/5ukraina/index.m3u8",
-            "timeshift": 0
-        }]
 
     temp_file = "/tmp/playlist.tmp"
     final_file = "/tmp/playlist.json"
 
     with open(temp_file, "w", encoding="utf-8") as f:
-        json.dump(channels_list, f, ensure_ascii=False, indent=4)
+        json.dump(raw_channels, f, ensure_ascii=False, indent=4)
 
     if os.path.exists(final_file):
         os.remove(final_file)
     os.rename(temp_file, final_file)
 
     status_data["last_update"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-    status_data["total_channels"] = len(channels_list)
+    status_data["total_channels"] = len(raw_channels)
     status_data["status"] = "Muvaffaqiyatli"
 
 def ensure_playlist():
-    if not os.path.exists("/tmp/playlist.json") or (time.time() - os.path.getmtime("/tmp/playlist.json") > 300):
+    if not os.path.exists("/tmp/playlist.json") or (time.time() - os.path.getmtime("/tmp/playlist.json") > 3600):
         try:
             update_playlist()
         except Exception:
@@ -223,7 +166,6 @@ def admin_panel():
             .card {{ background: #1e293b; padding: 30px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }}
             .badge {{ background: #22c55e; color: white; padding: 5px 12px; border-radius: 20px; font-weight: bold; }}
             a {{ color: #38bdf8; text-decoration: none; display: block; margin-top: 15px; font-size: 18px; }}
-            a:hover {{ text-decoration: underline; }}
         </style>
     </head>
     <body>
@@ -240,18 +182,20 @@ def admin_panel():
     </html>
     """
 
-@app.get("/health")
-def health_check():
-    return {"status": "ok"}
-
 @app.get("/playlist.json")
 def download_json():
     ensure_playlist()
     if os.path.exists("/tmp/playlist.json"):
         with open("/tmp/playlist.json", "r", encoding="utf-8") as f:
-            content = json.load(f)
-        return content
-    return JSONResponse(status_code=404, content={"error": "Hali playlist tayyor emas!"})
+            channels = json.load(f)
+        result = []
+        for idx, ch in enumerate(channels):
+            result.append({
+                "name": ch["name"],
+                "url": f"{BASE_PROXY_URL}/stream/{idx}"
+            })
+        return result
+    return JSONResponse(status_code=404, content={"error": "Playlist topilmadi"})
 
 @app.get("/pl.m3u8", response_class=PlainTextResponse)
 def download_m3u8():
@@ -259,26 +203,66 @@ def download_m3u8():
     if not os.path.exists("/tmp/playlist.json"):
         return "#EXTM3U\n# Xatolik: Playlist hali tayyorlanmadi"
 
-    try:
-        with open("/tmp/playlist.json", "r", encoding="utf-8") as f:
-            channels = json.load(f)
-    except Exception:
-        return "#EXTM3U\n# Xatolik: Playlistni o'qib bo'lmadi"
+    with open("/tmp/playlist.json", "r", encoding="utf-8") as f:
+        channels = json.load(f)
 
     m3u_lines = ["#EXTM3U"]
-    for ch in channels:
+    for idx, ch in enumerate(channels):
         name = ch.get("name", "Kanal")
-        url = ch.get("url", "")
         timeshift = ch.get("timeshift", 0)
+        stream_link = f"{BASE_PROXY_URL}/stream/{idx}"
         
         tvg_shift_attr = f' tvg-shift="{timeshift}"' if timeshift else ''
         catchup_attr = ' catchup="default" catchup-days="3"' if timeshift else ''
         
         m3u_lines.append(f"#EXTINF:-1{tvg_shift_attr}{catchup_attr},{name}")
-        m3u_lines.append(url)
+        m3u_lines.append(stream_link)
 
     return "\n".join(m3u_lines)
 
-@app.get("/favicon.ico", include_in_schema=False)
-async def favicon():
-    return Response(content=b"", media_type="image/vnd.microsoft.icon")
+# ГЕНЕРАЦИЯ СВЕЖЕГО ТОКЕНА ДЛЯ ВСЕХ КАНАЛОВ ON-DEMAND
+@app.get("/stream/{index}")
+def proxy_stream(index: int):
+    if not os.path.exists("/tmp/playlist.json"):
+        return Response("Playlist topilmadi", status_code=404)
+
+    try:
+        with open("/tmp/playlist.json", "r", encoding="utf-8") as f:
+            channels = json.load(f)
+        target = channels[index]
+        cmd = target["cmd"]
+    except Exception:
+        return Response("Kanal topilmadi", status_code=404)
+
+    session = get_session()
+    stream_url = ""
+
+    try:
+        clean_cmd = cmd
+        for prefix in ["ffmpeg ", "ch:ffrt ", "ffrt ", "ch:"]:
+            if clean_cmd.startswith(prefix):
+                clean_cmd = clean_cmd[len(prefix):].strip()
+
+        link_url = f"{PORTAL_URL}?type=itv&action=create_link&cmd={requests.utils.quote(clean_cmd)}&JsHttpRequest=1-xml"
+        link_res = session.get(link_url, timeout=10).json()
+        stream_cmd = link_res.get("js", {}).get("cmd") or link_res.get("js", {}).get("url") or ""
+
+        if stream_cmd:
+            for prefix in ["ffrt3 ", "ffrt2 ", "ffrt ", "ffmpeg ", "ch:ffrt ", "ch:"]:
+                if stream_cmd.startswith(prefix):
+                    stream_cmd = stream_cmd[len(prefix):].strip()
+            stream_url = stream_cmd
+
+    except Exception:
+        pass
+
+    if not stream_url and "http" in cmd:
+        stream_url = cmd
+        for prefix in ["ffmpeg ", "ch:ffrt ", "ffrt ", "ch:"]:
+            if stream_url.startswith(prefix):
+                stream_url = stream_url[len(prefix):].strip()
+
+    if stream_url:
+        return RedirectResponse(url=stream_url, status_code=302)
+
+    return Response("Stream url olinmadi", status_code=500)
